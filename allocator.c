@@ -55,22 +55,25 @@ void* mem_alloc(size_t size) {
                 ((head) pos) -> size = newSize;
                 ((head) (pos+headerSize+newSize))->predSize = newSize;
             }else{
-
                 ((head) addr)->size = oldSize;
             }
-            addr += headerSize;
         } else {
-            position += headerSize + curFrame->size;
-            
+            position += headerSize + curFrame->size; 
         }
     }
-
-    return addr;
+    if (addr !=NULL){
+        return addr+headerSize; 
+    }else{
+        return NULL;
+    }
+    
 }
 
 void mem_free(void* addr) {
-
+    
+  
     addr -= headerSize;
+
     if (addr != NULL){
         if (!((head) addr)->free) {
 
@@ -78,7 +81,6 @@ void mem_free(void* addr) {
             void* rightHeader = addr + headerSize + ((head) addr)->size;
 
             do {
-                //printf("%d\n", addr);
                 if (((head) rightHeader)->free) {
                     int newSize =((head) addr)->size + headerSize + ((head) rightHeader)->size;
                     ((head) addr)->size = newSize;
@@ -89,14 +91,15 @@ void mem_free(void* addr) {
             } while (((head) addr)->free);
         }
     }
+    addr = NULL;
     
 }
+
 
 void* mem_relloc(void* addr, size_t size){
     addr -= headerSize;
 
     if (addr != NULL){
-        
         int i;
         void* result = NULL;
         if (size % memFrame != 0) {
@@ -107,70 +110,91 @@ void* mem_relloc(void* addr, size_t size){
         void* leftHeader = addr - ((head) addr)->predSize - headerSize;
         int maxSize = 0;
         int newSize = 0 ;
-
-        if(((head)(rightHeader))->free ){   //розширення вправо
-
-            maxSize = ((head)(rightHeader))->size + ((head)(addr))->size + headerSize;
-            if (size <= maxSize){
+        
+        maxSize = ((head)(rightHeader))->size + ((head)(addr))->size + headerSize;
+        if((((head)(rightHeader))->free && size <= maxSize) ||
+                ((!((head)(rightHeader))->free) && size<((head) addr)->size) ){   //розширення вправо
+            
+            if((!((head)(rightHeader))->free) && size<((head) addr)->size){
+                maxSize = ((head)(addr))->size;
                 newSize = maxSize - size - headerSize;
-                if (newSize >= memFrame){
+                if (newSize >= 0){
+                    ((head)(addr))->size = size;
+                    
+                    ((head)(addr+headerSize+size))->free = 1;
+                    ((head)(addr+headerSize+size))->size = newSize;
+                    ((head)(addr+headerSize+size))->predSize = size;
+                    
+                    ((head)(addr+headerSize+size+headerSize+newSize))->predSize = newSize;
+                    
+                }//else нічого змінювати і не потрібно
+                
+            }else{
+                
+                newSize = maxSize - size - headerSize;  
+                if (newSize >= 0){
                     ((head)(addr+size+headerSize))->free = 1;
                     ((head)(addr+size+headerSize))->size = newSize;
                     ((head)(addr+size+headerSize))->predSize = size;
+
+                    ((head)(addr+headerSize+size+headerSize+newSize))->predSize = newSize;
+
                     ((head)(addr))->size = size;
                 }else{
                     ((head)(addr))->size = maxSize;
+                    ((head)(addr+headerSize+maxSize))->predSize = maxSize;
                 }
-                result = addr;
+                return addr + headerSize;
             }
-        }else{
-            maxSize = ((head)(leftHeader))->size + ((head)(addr))->size + headerSize; 
-            if(((head)(leftHeader))->free && size <= maxSize){   //зсув вліво
-  
-
-                newSize = maxSize - size - headerSize; 
-                int oldSize = ((head)(addr))->size;
-                for(i=0; i<oldSize; i+=sizeof(int)){
-                    *((int*)(leftHeader+headerSize+i))=*((int*)(addr+headerSize+i));
-                }
-                ((head)leftHeader)->free = 0;
-                
-                if (newSize >= memFrame){
-                    ((head)(leftHeader+headerSize+size))->free = 1;
-                    ((head)(leftHeader+headerSize+size))->size = newSize;
-                    ((head)(leftHeader+headerSize+size))->predSize = size;
-
-                    ((head)leftHeader)->size = size;
-                }else{
-                    ((head)leftHeader)->size = maxSize;
-                }
-
-            }else{   // пошук вільного кадру
-   
-                void* result = mem_alloc(size);
-                if (!result){
-                    addr = result;
-                }else{
-
-                    int length;
-
-                    if (size < ((head)addr)->size){
-                        length = size/sizeof(int);
-                    }else{
-                        length = ((head)addr)-> size/sizeof(int);
-                    }
-                    for (i=3; i<length;i++){
-
-                        ((int*)result)[i] = ((int*)addr)[i];
-                        ((int*)result)[i] = ((int*)addr)[i];
-                    }
-                   
-                    
-                    mem_free(addr);
-                }
-            }
-            
         }
+        maxSize = ((head)(leftHeader))->size + ((head)(addr))->size + headerSize; 
+        if(((head)(leftHeader))->free && size <= maxSize){   //зсув вліво
+
+            newSize = maxSize - size - headerSize; 
+            int length = ((head)(addr))->size/sizeof(int);
+            for(i=0; i<length; i++){
+                ((int*)(leftHeader+headerSize))[i]=((int*)(addr+headerSize))[i];
+            }
+            ((head)leftHeader)->free = 0;
+
+            if (newSize >= 0){
+                ((head)(leftHeader+headerSize+size))->free = 1;
+                ((head)(leftHeader+headerSize+size))->size = newSize;
+                ((head)(leftHeader+headerSize+size))->predSize = size;
+                
+                ((head)(leftHeader+headerSize+size+headerSize+newSize))->predSize = newSize;
+
+                ((head)leftHeader)->size = size;
+            }else{
+                ((head)(leftHeader+headerSize+maxSize))->predSize = maxSize;
+                ((head)leftHeader)->size = maxSize;
+            }
+            return leftHeader +headerSize;
+
+        }else{   // пошук вільного кадру
+
+            result = mem_alloc(size);
+            
+            if (!result){
+                return NULL;
+            }else{
+                result -= headerSize;
+                int length;
+
+                if (size < ((head)addr)->size){
+                    length = size/sizeof(int);
+                }else{
+                    length = (((head)addr)-> size)/sizeof(int);
+                }
+                for (i=0; i<length;i++){
+                    ((int*)(result+headerSize))[i] = ((int*)(addr+headerSize))[i];
+                }
+                addr += headerSize;
+                mem_free(addr);
+            }
+        }
+
+        
         return result + headerSize;
     }
     
@@ -190,16 +214,11 @@ void mem_dump() {
         printf("@%d N%d %c %d %d \n", pos, i, state, ((head) (pos + heap))->size,((head)(pos + heap))->predSize);
         i++;
         pos += headerSize + ((head) (pos + heap))->size;
-        /*     
-        if(i>10){
-            return;
-        }
-        */
     }
 }
 
 void mem_fill(void* addr){
-    printf("%d\n", addr);
+    
     if (addr == NULL){
         return;
     }
@@ -218,7 +237,6 @@ void mem_fill(void* addr){
 }
 
 int mem_check(void* addr){
-
     if (addr ==NULL){
         return 0;
     }
@@ -228,12 +246,7 @@ int mem_check(void* addr){
 
     int length = ((head)(addr-headerSize))->size / sizeof(int);
 
-    
-    if(length > 100){
-        printf("%d\n", length);
-        mem_dump();
-        getc(stdin);
-    }
+
     for(i=1;i<length;i++){
         SUM ^= ((int* )addr)[i];
     }
